@@ -22,7 +22,7 @@ namespace Window
     {
         Q_OBJECT
     public:
-        enum { RECONNECT_SECOND = 15 };
+        enum { RECONNECT_SECOND = 5 };
         
         explicit MainWindow(QWidget *parent = 0);
         ~MainWindow();
@@ -37,6 +37,7 @@ namespace Window
         void on_readyDisconnected();
         void on_error(const QString &error);
         void on_dataRecieved(const QByteArray &data, qint32 sourceFeatureCode);
+        void on_messageTypeComboBoxSelectionChanged(int index);
     protected:
         bool event(QEvent *e);
     private:
@@ -45,6 +46,7 @@ namespace Window
         quint16 _port;
         QString _userName;
         bool _isForceDisconnect = false;
+        QString _lastPostion;
         
         Socket::LongLivedTcpSocket *_socket = nullptr;
         HeaderFrameHelper::MessageType _currentMessageType;

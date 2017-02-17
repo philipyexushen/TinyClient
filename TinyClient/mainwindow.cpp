@@ -57,6 +57,18 @@ namespace Window
         
         ui->_comboBox_messageType->setCurrentIndex(0);
         _currentMessageType = HeaderFrameHelper::MessageType::PlainMessage;
+        
+        connect(ui->_comboBox_messageType, SIGNAL(currentIndexChanged(int)), this, SLOT(on_messageTypeComboBoxSelectionChanged(int)));
+    }
+    
+    void MainWindow::on_messageTypeComboBoxSelectionChanged(int)
+    {
+        if(ui->_comboBox_messageType->currentIndex() == 0)
+            _currentMessageType = HeaderFrameHelper::MessageType::PlainMessage;
+        else if(ui->_comboBox_messageType->currentIndex() == 1)
+            _currentMessageType = HeaderFrameHelper::MessageType::Coordinate;
+        else if (ui->_comboBox_messageType->currentIndex() == 2)
+            _currentMessageType = HeaderFrameHelper::MessageType::Help;
     }
     
     /// 发送消息
@@ -75,7 +87,12 @@ namespace Window
         else if(_currentMessageType == HeaderFrameHelper::MessageType::Coordinate)
             emit sendCoordinate(bytes);
         else if(_currentMessageType == HeaderFrameHelper::MessageType::Help)
-            emit sendHelp(bytes);
+        {
+            QByteArray coordinateMessage = codec->fromUnicode(_lastPostion + " ");
+            coordinateMessage += bytes;
+            emit sendHelp(coordinateMessage);
+        }
+            
     }
     
     /// 打开GPS定位功能
@@ -225,6 +242,7 @@ namespace Window
                 insertMessage("获取GPS定位坐标失败");
             else
             {
+                _lastPostion = sce->m_arg2;
                 insertMessage("P " + sce->m_arg2);
                 QTextCodec *codec = QTextCodec::codecForName("GB18030");
                 QByteArray bytes = codec->fromUnicode(sce->m_arg2);

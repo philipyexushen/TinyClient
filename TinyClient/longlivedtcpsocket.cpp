@@ -23,7 +23,12 @@ namespace Socket
         connect(this, &LongLivedTcpSocket::disconnected, this, &LongLivedTcpSocket::on_disconnected);
         
         connect(this, static_cast<void(QAbstractSocket::*)(QAbstractSocket::SocketError)>(&QAbstractSocket::error),
-              [=](QAbstractSocket::SocketError){ emit error(errorString()); });
+              [=](QAbstractSocket::SocketError)
+        { 
+            emit error(errorString()); 
+            if (!_isConnected)
+               emit readyDisconnected(); 
+        });
     }
     
     /// 如果是多线程异步连接目标主机，必须在线程启动后用QMetaObject::InvokeMethod引发此槽函数
@@ -72,63 +77,73 @@ namespace Socket
         qint64 readReturn;
         QByteArray bytes;
 
+        _isReading = true;
+        
         _currentRead = bytesAvailable();
         //qDebug () << "nAvailable: " << _currentRead;
         
         if (_currentRead < HeaderFrameHelper::sizeofHeaderFrame())
             return 0;
-        
-        if (!_waitingForWholeData)
+        while (_currentRead >= HeaderFrameHelper::sizeofHeaderFrame())
         {
-            bytes.resize(HeaderFrameHelper::sizeofHeaderFrame());
-            readReturn = read(bytes.data(), HeaderFrameHelper::sizeofHeaderFrame());
-            
-            if (readReturn == -1)
-                return -1;
-            nRead += readReturn;
-            
-            HeaderFrameHelper::praseHeader(bytes, _headerFrame);
-            _targetLength = _headerFrame.messageLength + HeaderFrameHelper::sizeofHeaderFrame();
-            //qDebug () << "headerFrame length: " << _headerFrame.messageLength;
-        }
-        
-        if (_currentRead >= _targetLength)
-        {
-            qint32 length = _targetLength - HeaderFrameHelper::sizeofHeaderFrame();
-            bytes.resize(length);
-            readReturn = read(bytes.data(), length);
-            
-            if (readReturn == -1)
-                return -1;
-            nRead += readReturn;
-            
-            _featureCode = _headerFrame.featureCode;
-            if(_headerFrame.messageType == static_cast<qint32>(HeaderFrameHelper::MessageType::PulseFacility))
+            if (!_waitingForWholeData)
             {
+                bytes.resize(HeaderFrameHelper::sizeofHeaderFrame());
+                readReturn = read(bytes.data(), HeaderFrameHelper::sizeofHeaderFrame());
                 
+                if (readReturn == -1)
+                    return -1;
+                nRead += readReturn;
+                
+                HeaderFrameHelper::praseHeader(bytes, _headerFrame);
+                _targetLength = _headerFrame.messageLength + HeaderFrameHelper::sizeofHeaderFrame();
+                //qDebug () << "headerFrame length: " << _headerFrame.messageLength;
             }
-            else if(_headerFrame.messageType == static_cast<qint32>(HeaderFrameHelper::MessageType::ACKPulse))
-            {
-                pulseACK = true;
-            }
-            else if(_headerFrame.messageType == static_cast<qint32>(HeaderFrameHelper::MessageType::PlainMessage)
-                    ||_headerFrame.messageType == static_cast<qint32>(HeaderFrameHelper::MessageType::Coordinate))
-            {
-                emit dataReceived(bytes,_headerFrame.sourceFeatureCode);
-            }
-            else if (_headerFrame.messageType == static_cast<qint32>(HeaderFrameHelper::MessageType::ServerTest))
-            {
-                emit dataReceived(bytes,_headerFrame.sourceFeatureCode);
-                on_sendData(HeaderFrameHelper::MessageType::ACK, QString("ACK!"));
-            }
-            qDebug () << "_currentRead: " << _currentRead;
             
-            _waitingForWholeData = false;
-            _currentRead -= _targetLength;
+            if (_currentRead >= _targetLength)
+            {
+                qint32 length = _targetLength - HeaderFrameHelper::sizeofHeaderFrame();
+                bytes.resize(length);
+                readReturn = read(bytes.data(), length);
+                
+                if (readReturn == -1)
+                    return -1;
+                nRead += readReturn;
+                
+                _featureCode = _headerFrame.featureCode;
+                if(_headerFrame.messageType == static_cast<qint32>(HeaderFrameHelper::MessageType::PulseFacility))
+                {
+                    
+                }
+                else if(_headerFrame.messageType == static_cast<qint32>(HeaderFrameHelper::MessageType::ACKPulse))
+                {
+                    pulseACK = true;
+                }
+                else if(_headerFrame.messageType == static_cast<qint32>(HeaderFrameHelper::MessageType::PlainMessage)
+                        ||_headerFrame.messageType == static_cast<qint32>(HeaderFrameHelper::MessageType::Coordinate))
+                {
+                    emit dataReceived(bytes,_headerFrame.sourceFeatureCode);
+                }
+                else if (_headerFrame.messageType == static_cast<qint32>(HeaderFrameHelper::MessageType::ServerTest))
+                {
+                    emit dataReceived(bytes,_headerFrame.sourceFeatureCode);
+                    on_sendData(HeaderFrameHelper::MessageType::ACK, QString("ACK!"));
+                }
+                qDebug () << "_currentRead: " << _currentRead;
+                
+                _waitingForWholeData = false;
+                _currentRead -= _targetLength;
+                
+                if (_currentRead == 0)
+                    _isReading = false;
+            }
+            //如果不等于headerFrame.messageLength，说明还没读完，继续读取
+            else
+            {
+                _waitingForWholeData = true;
+                break;
+            }
         }
-        //如果不等于headerFrame.messageLength，说明还没读完，继续读取
-        else
-            _waitingForWholeData = true;
         return nRead;
     }
     
@@ -189,12 +204,15 @@ namespace Socket
     /// 响应心跳包发送
     void LongLivedTcpSocket::on_pulseTimerTimeout()
     {
-        _waitPulseACKTimer->setSingleShot(true);
-        _waitPulseACKTimer->start(PULSE_ACK);
-        connect(_waitPulseACKTimer, SIGNAL(timeout()), this, SLOT(on_pulseTimeOut()));
-        pulseACK = false;
-        
-        on_sendData(HeaderFrameHelper::MessageType::PulseFacility,QString());
+        if (!_isReading)
+        {
+            _waitPulseACKTimer->setSingleShot(true);
+            _waitPulseACKTimer->start(PULSE_ACK);
+            connect(_waitPulseACKTimer, SIGNAL(timeout()), this, SLOT(on_pulseTimeOut()));
+            pulseACK = false;
+            
+            on_sendData(HeaderFrameHelper::MessageType::PulseFacility,QString());
+        }
     }
     
     /// 响应服务器心跳包回应

@@ -108,7 +108,7 @@ public class GpsService extends org.qtproject.qt5.android.bindings.QtActivity
 
 	        String str = new String();
 	        if (location.getProvider() == "lbs")
-		   str = "faild";
+		   str = "failed";
 	        else
 		   str = String.valueOf(geoLat) + " " + String.valueOf(geoLng);
 		   /*

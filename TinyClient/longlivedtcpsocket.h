@@ -14,7 +14,7 @@ namespace Socket
     public:
         static LongLivedTcpSocket *Instance();
         
-        enum {  PULSE_INTERVAL = 20000, PULSE_ACK = 10000 };
+        enum {  PULSE_INTERVAL = 10000, PULSE_ACK = 5000};
         static QString getSocketErrorType(QAbstractSocket::SocketError error);
         ~LongLivedTcpSocket() = default;
     signals:
@@ -50,6 +50,7 @@ namespace Socket
 
         bool _isConnected = false;
         bool _waitingForWholeData = false;
+        bool _isReading = false;
         qint64 _currentRead = 0; 
         qint32 _targetLength = 0;
         HeaderFrameHelper::TcpHeaderFrame _headerFrame;
