@@ -12,7 +12,7 @@ namespace Socket
     {
         Q_OBJECT
     public:
-        static LongLivedTcpSocket *Instance();
+        explicit LongLivedTcpSocket(QObject *parent = nullptr);
         
         enum {  PULSE_INTERVAL = 10000, PULSE_ACK = 5000};
         static QString getSocketErrorType(QAbstractSocket::SocketError error);
@@ -51,12 +51,17 @@ namespace Socket
         bool _isConnected = false;
         bool _waitingForWholeData = false;
         bool _isReading = false;
+        bool _isWritting = false;
+        bool _forcePulse = false;
+        
+        qint32 _readCount = 0;
+        qint32 _lastReadCountBeforePulse = 0;
         qint64 _currentRead = 0; 
         qint32 _targetLength = 0;
         HeaderFrameHelper::TcpHeaderFrame _headerFrame;
         
-        //隐藏构造函数，单例模式
-        explicit LongLivedTcpSocket(QObject *parent = nullptr);
+        void incReadCount();
+        
         LongLivedTcpSocket(const LongLivedTcpSocket &s) = delete;
         LongLivedTcpSocket operator=(const LongLivedTcpSocket &s) = delete;
     };

@@ -21,7 +21,6 @@ namespace Window
         connect(ui->_button_clearBrower, SIGNAL(clicked()), ui->textBrowser,SLOT(clear()));
         
         inivilizeMessageTypeComboBox();
-        inivilizeSocket();
     }
     
     /// 初始化单一实例的socket
@@ -29,7 +28,7 @@ namespace Window
     {
         QThread *workerThread = new QThread;
         
-        _socket = Socket::LongLivedTcpSocket::Instance();
+        _socket = new Socket::LongLivedTcpSocket;
         connect(_socket, &QObject::destroyed, workerThread, &QThread::quit);
         connect(workerThread, &QThread::finished,workerThread,&QThread::deleteLater);
         
@@ -61,6 +60,7 @@ namespace Window
         connect(ui->_comboBox_messageType, SIGNAL(currentIndexChanged(int)), this, SLOT(on_messageTypeComboBoxSelectionChanged(int)));
     }
     
+    /// 初始化选择框内容
     void MainWindow::on_messageTypeComboBoxSelectionChanged(int)
     {
         if(ui->_comboBox_messageType->currentIndex() == 0)
@@ -143,6 +143,14 @@ namespace Window
     /// 尝试连接的私有方法
     void MainWindow::startConnectionHelper()
     {
+        ui->_button_addressOneConnect->setEnabled(false);
+        ui->_button_addressOneConnect->setStyleSheet(GRAY_STYLE);
+                
+        ui->_button_addressTwoConnect->setEnabled(false);
+        ui->_button_addressTwoConnect->setStyleSheet(GRAY_STYLE);
+        
+        inivilizeSocket();
+        
         if (ui->_lineEdit_userName->text().isEmpty())
         {   
             ui->_lineEdit_userName->setText(tr(DEFAULT_USERNAME));
@@ -168,12 +176,6 @@ namespace Window
         ui->_button_disconnect->setEnabled(true);
         ui->_button_disconnect->setStyleSheet(BLUE_STYLE);
         
-        ui->_button_addressOneConnect->setEnabled(false);
-        ui->_button_addressOneConnect->setStyleSheet(GRAY_STYLE);
-                
-        ui->_button_addressTwoConnect->setEnabled(false);
-        ui->_button_addressTwoConnect->setStyleSheet(GRAY_STYLE);
-        
         ui->_lineEdit_userName->setReadOnly(true);
     }
 
@@ -187,6 +189,9 @@ namespace Window
     /// 响应套接字关闭
     void MainWindow::on_readyDisconnected()
     {
+        QMetaObject::invokeMethod(_socket,"deleteLater",Qt::QueuedConnection);
+        _socket = nullptr;
+        
         insertMessage(tr("###与目标服务器断开连接"));
         ui->_button_sendMessage->setEnabled(false);
         ui->_button_sendMessage->setStyleSheet(GRAY_STYLE);
@@ -201,7 +206,7 @@ namespace Window
             QTimer::singleShot(RECONNECT_SECOND*1000, this, SLOT(startConnectionHelper()));
         }
         
-        if (_isForceDisconnect)
+        if (_isForceDisconnect || !ui->_checkBox_IsAutoReconnect->isChecked())
         {
             ui->_button_addressOneConnect->setEnabled(true);
             ui->_button_addressOneConnect->setStyleSheet(BLUE_STYLE);

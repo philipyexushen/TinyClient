@@ -1,15 +1,9 @@
 ﻿#include <QTextCodec>
+#include <limits>
 #include "longlivedtcpsocket.h"
 
 namespace Socket
 {
-    /// 获得socket的唯一实例
-    LongLivedTcpSocket *LongLivedTcpSocket::Instance()
-    {
-        static LongLivedTcpSocket *socket = new LongLivedTcpSocket;
-        return socket;
-    }
-    
     /// 创建一个新的socket
     LongLivedTcpSocket::LongLivedTcpSocket(QObject *parent)
         :QTcpSocket (parent)
@@ -55,7 +49,7 @@ namespace Socket
     void LongLivedTcpSocket::on_requestDisconnect()
     {
         _pulseTimer->stop();
-        on_sendData(HeaderFrameHelper::MessageType::DeviceLogOut, QString());
+        //on_sendData(HeaderFrameHelper::MessageType::DeviceLogOut, QString());
         close();
     }
     
@@ -144,6 +138,7 @@ namespace Socket
                 break;
             }
         }
+        incReadCount();
         return nRead;
     }
     
@@ -151,6 +146,7 @@ namespace Socket
     /// 返回值为-1时，说明发送失败，大于零表示数据正常发送
     qint64 LongLivedTcpSocket::on_sendData(HeaderFrameHelper::MessageType messageType, const QByteArray &bytes)
     {
+        _isWritting = true;
         qint64 ret = -1;
         
         HeaderFrameHelper::TcpHeaderFrame header;
@@ -164,6 +160,8 @@ namespace Socket
                                                  
         ret = write(packingBytes,packingBytes.size());
         flush();
+        
+        _isWritting = false;
         return ret;
     }
     
@@ -204,13 +202,27 @@ namespace Socket
     /// 响应心跳包发送
     void LongLivedTcpSocket::on_pulseTimerTimeout()
     {
-        if (!_isReading)
+        if ((!_isReading && !_isWritting))
+            //如果_lastReadCountBeforePulse == _readCount，再发一次心跳包，如果还不响应，说明真的断开了连接
         {
             _waitPulseACKTimer->setSingleShot(true);
             _waitPulseACKTimer->start(PULSE_ACK);
             connect(_waitPulseACKTimer, SIGNAL(timeout()), this, SLOT(on_pulseTimeOut()));
-            pulseACK = false;
             
+            pulseACK = false;
+            on_sendData(HeaderFrameHelper::MessageType::PulseFacility,QString());
+            
+            _lastReadCountBeforePulse = _readCount;
+        }
+        if (_lastReadCountBeforePulse == _readCount)
+        {
+            _forcePulse = true;//强制验证
+            
+            _waitPulseACKTimer->setSingleShot(true);
+            _waitPulseACKTimer->start(PULSE_ACK);
+            connect(_waitPulseACKTimer, SIGNAL(timeout()), this, SLOT(on_pulseTimeOut()));
+            
+            pulseACK = false;
             on_sendData(HeaderFrameHelper::MessageType::PulseFacility,QString());
         }
     }
@@ -222,8 +234,29 @@ namespace Socket
         disconnect(_waitPulseACKTimer, SIGNAL(timeout()), this, SLOT(on_pulseTimeOut()));
         if (!pulseACK && _isConnected)
         {
-            error("socket lost connection");
-            close();
+            if (!_isReading && !_isWritting)
+            {
+                error("Socket lost connection");
+                close();
+            }         
+            else if (_forcePulse)
+            {
+                if (_lastReadCountBeforePulse == _readCount)
+                {
+                    error("Server ack too long");
+                    close();
+                }
+                else
+                    _forcePulse = false;
+            }
         }
+    }
+    
+    /// 增加读的次数，心跳包设施之一
+    void LongLivedTcpSocket::incReadCount()
+    {
+        if (_readCount == 0x7fffffff)
+            _readCount = 0;
+        _readCount++;
     }
 }
